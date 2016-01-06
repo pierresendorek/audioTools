@@ -52,13 +52,12 @@ function triangle(phase::Phase)
     end
 end
 
+#=
 function linearInterpolation(x,y,t)
     # wrapper
     # interpolates the (x[i],y[i]) and produces a piecewise linear function such as f(x[i])=y[i]
-
-
 end
-
+=#
 
 #=
 function getSampleFromPeriodicBuffer(buf::Array{Float64,1},phase::Float64)
