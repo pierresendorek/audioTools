@@ -2,7 +2,7 @@ using WAV
 using Gaston
 # has to return a function giving the pitch and the formant amplitude for each sample
 
-x, Fs = wavread("yashar.wav")
+x, Fs = wavread("in.wav")
 
 nFFT = 2048
 halfNFFT=div(nFFT,2)
@@ -53,7 +53,7 @@ for ifqVoiceAnalysis in 1:nFqVoiceAnalysis
     rSmp = Fs/fq
     nPhase = round(Int,ceil(rSmp))
     B=spzeros(nFFT,nPhase)
-    for iPhase in 1:nPhase        
+    for iPhase in 1:nPhase
         for k in round(Int,ceil((1-iPhase)/rSmp)):round(Int,floor((nFFT-iPhase)/rSmp))
             it=round(Int,k*rSmp+iPhase)
             B[it,iPhase]=1
@@ -150,7 +150,7 @@ for iWin in 1:nWin
     s=abs(fft(x[sb:se].*apoWin2))
     #=  spectrCut[:,iWin]=v[1:iFqAnalysisMax] =#
     s=s[1:halfNFFT]
-    
+
     for ifqVoiceAnalysis in 1:nFqVoiceAnalysis
         B=A[ifqVoiceAnalysis]
         v=B\x[sb:se]
@@ -163,12 +163,12 @@ for iWin in 1:nWin
     v=B\x[sb:se]
     hatXPitch=B*v
     hatNoise=x[sb:se]-hatXPitch
-    hatSPitch=abs(fft(hatXPitch.*apoWin2))    
+    hatSPitch=abs(fft(hatXPitch.*apoWin2))
     formantsPitch=C*hatSPitch[1:halfNFFT]
-    
-    hatSNoise=abs(fft(hatXPitch.*apoWin2))
+
+    hatSNoise=abs(fft(hatNoise.*apoWin2))
     formantsNoise=C*hatSNoise[1:halfNFFT]
-    
+
     pitchArray[iWin]=fqPitch
     formantsPitchArray[iWin,:]=formantsPitch
     formantsNoiseArray[iWin,:]=formantsNoise
@@ -218,7 +218,7 @@ end
 phase=Phase(0)
 
 for it in 1:size(x)[1]
-    ySaw[it]=square(phase)
+    ySaw[it]=saw(phase)
     incrementPhaseByFreq!(phase,yPitch[it])
 end
 
@@ -245,7 +245,7 @@ for iWin in 1:nWin
     tYN=YN[1:halfNFFT]
     ftYN=tYN.*(regPinvC*formantsNoiseArray[iWin,:]')
 
-    Y[1:halfNFFT]=ftYS  #+ ftYN
+    Y[1:halfNFFT]=ftYS  + ftYN
     Y[halfNFFT+1:nFFT]=conj(flipdim(Y[1:halfNFFT],1))
     y[sb:se]+=real(ifft(Y)).*apoWin
 end
