@@ -7,33 +7,53 @@ x, Fs = wavread("in.wav")
 nFFT = 2048
 halfNFFT=div(nFFT,2)
 nGap=512 # between windows
-nWin = round(Int,(size(x)[1] - nFFT +1)/nGap -1) # nombre de fenetres
+nWin = round(Int,(size(x)[1] - nFFT +1)/nGap -1) # number of windows
+
+nFormant=40 # Int
+fqFormantMin=50.0
+fqFormantMax=22050.0
 
 apoWin=sinpi(linspace(0, 1.0*(nFFT-1)/nFFT ,nFFT))
 apoWin2=apoWin.*apoWin
 
 
-# frequencies of the FFT used for pitch estimation
-fqAnalysisMin=50 # Hz
-fqAnalysisMax=4000.0 # Hz
+verbose=true
 
-# indices correspondants
-iFqAnalysisMax = round(Int,ceil(fqAnalysisMax*nFFT/Fs + 1))
-iFqAnalysisMin = round(Int,floor(fqAnalysisMin*nFFT/Fs + 1))
+function printlnv(s)
+    if verbose==true
+        println(s)
+    end
+end
 
-#spectrCut=zeros(iFqAnalysisMax,nWin)
+
 spectr=zeros(halfNFFT,nWin)
 
 
 # fmin et fmax pour la voix
 fqVoiceMin=70.0
 fqVoiceMax=300.0
-nFqVoiceAnalysis=200 # Int
+#nFqVoiceAnalysis=200 # Int
+
+dTmax=round(Int,ceil(Fs/fqVoiceMin))
+dTmin=round(Int,floor(Fs/fqVoiceMax))
+
+nFqVoiceAnalysis=dTmax-dTmin+1
+
+fqAnalysis=Fs./(collect(dTmin:dTmax))
+
+#fqAnalysis=exp(linspace(log(fqVoiceMin),log(fqVoiceMax),nFqVoiceAnalysis)) # repartition log
+# fqVoicePrecision=(log2(fqAnalysis[2])-log2(fqAnalysis[1]))/12 # semitones between 2 fqs
 
 
-fqAnalysis=exp(linspace(log(fqVoiceMin),log(fqVoiceMax),nFqVoiceAnalysis)) # repartition log
 
-fqVoicePrecision=(log2(fqAnalysis[2])-log2(fqAnalysis[1]))/12 # semitones between 2 fqs
+function powerOfTheResidualAfterRemoveFq(dT::Int64,x::Array{Float64,2},sb::Int64,se::Int64)
+    s=0.0
+    for i in sb:se
+       v=2*x[i]-get(x,i-dT,0.0)-get(x,i+dT,0.0) # y = k*(Id - P)*x
+       s+=v^2
+    end
+    return s/6
+end
 
 
 function selector(x)
@@ -45,8 +65,8 @@ function selector(x)
 end
 
 
-println("init des matrices")
-# matrices d'analyse de pitch
+printlnv("init matrices")
+# pitch analysis
 A=Array(SparseMatrixCSC{Float64,Int64},nFqVoiceAnalysis)
 for ifqVoiceAnalysis in 1:nFqVoiceAnalysis
     fq = fqAnalysis[ifqVoiceAnalysis] # fondamentale
@@ -64,14 +84,8 @@ end
 
 
 
-nFormant=40 # Int
-fqFormantMin=50.0
-fqFormantMax=22050.0
 
 fqFormantArray=exp(linspace(log(fqFormantMin),log(fqFormantMax),nFormant+2)) # central frequencies
-
-
-
 function triangle(x,xLeftZero,xTop,xRightZero)
     if x<xLeftZero || x>xRightZero
         return 0
@@ -81,7 +95,6 @@ function triangle(x,xLeftZero,xTop,xRightZero)
         return (xRightZero-x)/(xRightZero-xTop)
     end
 end
-
 
 
 C=spzeros(nFormant,halfNFFT)
@@ -98,14 +111,12 @@ for iFormant in 1:nFormant
     end
 end
 
-# calcul de la pinvC régularisée
 fC=full(C)
-#U,A,V=svd(C)
-# C = U*diagm(A)*V'
 sigmaReg=1E-3
+# regPinvC = regularized pseudo inverse
 regPinvC=fC'*inv(fC*fC' + sigmaReg^2 * eye(nFormant,nFormant))
 
-println("fin init des matrices") # sauvergarder ces matrices pour la demo
+printlnv("matrices initialized")
 
 
 #=
@@ -134,7 +145,8 @@ end
 
 
 
-println("calcul (du spectrogramme,) du pitch et de l'enveloppe spectrale")
+
+printlnv("computation of pitch and spectral enveloppe")
 
 u=zeros(Float64,nFqVoiceAnalysis)
 
@@ -148,15 +160,14 @@ for iWin in 1:nWin
     sb=round(Int,(iWin-1)*nGap + 1)
     se = sb+nFFT-1
     s=abs(fft(x[sb:se].*apoWin2))
-    #=  spectrCut[:,iWin]=v[1:iFqAnalysisMax] =#
+    
     s=s[1:halfNFFT]
 
-    for ifqVoiceAnalysis in 1:nFqVoiceAnalysis
-        B=A[ifqVoiceAnalysis]
-        v=B\x[sb:se]
-        u[ifqVoiceAnalysis]=norm(x[sb:se]-B*v)
+    # nFqVoiceAnalysis=dTmax-dTmin+1
+    for idT in 1:nFqVoiceAnalysis
+        dT=dTmin+idT-1
+        u[idT]=powerOfTheResidualAfterRemoveFq(dT,x,sb,se)
     end
-
     val,idxFqPitch=findmin(u)
     fqPitch=fqAnalysis[idxFqPitch] # Hz
     B=A[idxFqPitch]
@@ -174,13 +185,13 @@ for iWin in 1:nWin
     formantsNoiseArray[iWin,:]=formantsNoise
 end
 
-println("fin calcul (du spectrogramme,) du pitch et de l'enveloppe spectrale")
+printlnv("pitch and spectral enveloppe computed")
 
 # voiceData = VoiceData(Fs,nGap,nFFT,pitchArray,formantsPitchArray,formantsNoiseArray)
 
 
 type Phase
-    phi::Float64 # dérivée de fréquence instantanée en Hz
+    phi::Float64 # in the interval [0,1[
 end
 
 
@@ -193,6 +204,7 @@ function saw(phase::Phase)
     return 2*(phase.phi-0.5)
 end
 
+#=
 function square(phase::Phase)
     if phase.phi<0.1
         return 0.9
@@ -200,20 +212,29 @@ function square(phase::Phase)
         return -0.1
     end
 end
-
+=#
 
 ySaw=zeros(Float64,size(x)[1])
 yPitch=zeros(Float64,size(x)[1])
 y=zeros(Float64,size(x)[1])
 
-println("synthèse")
-
+printlnv("synthesis")
+sm=1
+pitchPrev=0.0
 for iWin in 1:nWin
     sb=round(Int,(iWin-1)*nGap + 1)
     se = sb+nFFT-1
+    smPrev=sm
+    sm=div(sb+se,2)
     pitch=pitchArray[iWin]
-    yPitch[sb:se]+=pitch*apoWin2/2 # /!\ denominator should depend on nGap and nFFT !
+    if iWin==1
+        pitchPrev=pitch
+    end
+    yPitch[smPrev:sm]=linspace(pitchPrev,pitch,sm-smPrev+1)
+    pitchPrev=pitch
 end
+
+yPitch[sm:length(yPitch)]=linspace(pitchPrev,pitchPrev,length(yPitch)-sm+1)
 
 phase=Phase(0)
 
