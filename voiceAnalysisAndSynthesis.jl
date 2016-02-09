@@ -2,7 +2,14 @@ using WAV
 using Gaston
 # has to return a function giving the pitch and the formant amplitude for each sample
 
-x, Fs = wavread("in.wav")
+#=
+# todo :
+function initFeatureExtraction()
+    # use metaprogramming
+end
+=#
+
+
 
 
 type Phase
@@ -41,7 +48,7 @@ function selector(x)
 end
 
 
-function incrementPhaseByFreq!(phase::Phase,freq::Float64)
+function incrementPhaseByFreq!(phase::Phase,freq::Float64,Fs::Float64)
     phase.phi = rem( phase.phi + freq/Fs , 1.0 )
 end
 
@@ -71,16 +78,15 @@ function triangle(x,xLeftZero,xTop,xRightZero)
 end
 
 
-function extractFeatures(x::Array{Float64,2},Fs::Float32)
+
+function extractFeatures(x::Array{Float64,2},Fs::Float64)
     nFFT = 2048
     halfNFFT=div(nFFT,2)
     nGap=div(nFFT,4) # between windows
     nWin = round(Int,(size(x)[1] - nFFT +1)/nGap -1) # number of windows
-
     nFormant=40 # Int
     fqFormantMin=50.0
     fqFormantMax=22050.0
-
     apoWin=sinpi(linspace(0, 1.0*(nFFT-1)/nFFT ,nFFT))
     apoWin2=apoWin.*apoWin
 
@@ -224,7 +230,7 @@ function synthesisFromVoiceData(voiceData::VoiceData)
     sigmaReg=1E-3
     regPinvC=fC'*inv(fC*fC' + sigmaReg^2 * eye(nFormant,nFormant))
 
-    
+
     apoWin=sinpi(linspace(0, 1.0*(nFFT-1)/nFFT ,nFFT))
     apoWin2=apoWin.*apoWin
 
@@ -257,10 +263,10 @@ function synthesisFromVoiceData(voiceData::VoiceData)
 
     for it in 1:lenX
         ySaw[it]=saw(phase)
-        incrementPhaseByFreq!(phase,yPitch[it])
+        incrementPhaseByFreq!(phase,yPitch[it],Fs)
     end
 
-    wavwrite(ySaw*0.1,"outSynth.wav",Fs=Fs)
+    #wavwrite(ySaw*0.1,"outSynth.wav",Fs=Fs)
 
     yWhiteNoise=randn(lenX)
 
@@ -273,9 +279,6 @@ function synthesisFromVoiceData(voiceData::VoiceData)
         YS=fft(ySaw[sb:se].*apoWin)
         YS=YS./(abs(YS)+1)
         tYS=YS[1:halfNFFT]
-        #=trTYS=C*tYS
-        iTrTYS=1./(trTYS+1E-6)
-        iTYS=regPinvC*iTrTYS =#
         ftYS=tYS.*(regPinvC*formantsPitchArray[iWin,:]')
 
         YN=fft(yWhiteNoise[sb:se].*apoWin)
@@ -287,18 +290,20 @@ function synthesisFromVoiceData(voiceData::VoiceData)
         Y[halfNFFT+1:nFFT]=conj(flipdim(Y[1:halfNFFT],1))
         y[sb:se]+=real(ifft(Y)).*apoWin
     end
-    
+
     return y
 end
 
-voiceData,roughLogSpectrum=extractFeatures(x,Fs)
 
-y=synthesisFromVoiceData(voiceData)
-
-y=0.9*y/maximum(abs(y))
-printlnv("Done.")
-
-wavwrite(y,"out.wav",Fs=Fs)
+function testExtractFeatures()
+    x, Fs = wavread("in.wav")
+    Fs=convert(Float64,Fs)
+    voiceData,roughLogSpectrum=extractFeatures(x,Fs)
+    y=synthesisFromVoiceData(voiceData)
+    y=0.9*y/maximum(abs(y))
+    printlnv("Done.")
+    wavwrite(y,"out.wav",Fs=Fs)
+end
 
 
 
